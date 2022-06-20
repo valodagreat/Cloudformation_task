@@ -1,0 +1,480 @@
+# Please Note
+# Outputs of the LoadBalancer and the LoadBalancer DNS can be found at the end of the template file
+
+Description: >
+    Valentine Ifedayo Project 2
+    This project creates four servers(two each) in two private subnets located in different AZs.
+
+Parameters:
+  #Provison of parameters that seems necessary to me
+    EnvironmentName:
+        Description: The Environment Name for my template
+        Type: String
+    VpcCidrBlock:
+        Description: The CIDR block to be used by the VPC
+        Type: String
+        Default: 10.0.0.0/16
+    PubSubnet1CidrBlock:
+        Description: The CIDR block to be used by the first public subnet
+        Type: String
+        Default: 10.0.0.0/24
+    PubSubnet2CidrBlock:
+        Description: The CIDR block to be used by the first public subnet
+        Type: String
+        Default: 10.0.1.0/24
+    PrivSubnet1CidrBlock:
+        Description: The CIDR block to be used by the first private subnet
+        Type: String
+        Default: 10.0.2.0/24
+    PrivSubnet2CidrBlock:
+        Description: The CIDR block to be used by the first private subnet
+        Type: String
+        Default: 10.0.3.0/24
+    InstanceType:
+        Description: Instance type permitted to be used
+        Type: String
+        Default: t3.medium
+        AllowedValues:
+          - t3.small
+          - t3.medium
+          - t3.large
+Resources:
+  #Creation of the resources needed to for my server to run successfully
+
+  #Creation of the VPC
+    myVPC:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: !Ref VpcCidrBlock
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags:
+              - Key: Name
+                Value: !Ref EnvironmentName
+
+    InternetGatewayAttachmentToVPC:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            InternetGatewayId: !Ref InternetGateway
+            VpcId: !Ref myVPC
+
+    PubSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: !Ref PubSubnet1CidrBlock
+            MapPublicIpOnLaunch: true
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Public Subnet (AZ-a)
+            VpcId: !Ref myVPC
+
+    PubSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            AvailabilityZone: !Select [ 1, !GetAZs ]
+            CidrBlock: !Ref PubSubnet2CidrBlock
+            MapPublicIpOnLaunch: true
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Public Subnet (AZ-b)
+            VpcId: !Ref myVPC
+
+    PrivSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: !Ref PrivSubnet1CidrBlock
+            MapPublicIpOnLaunch: false
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Public Subnet (AZ-a)
+            VpcId: !Ref myVPC
+
+    PrivSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            AvailabilityZone: !Select [ 1, !GetAZs ]
+            CidrBlock: !Ref PrivSubnet2CidrBlock
+            MapPublicIpOnLaunch: false
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Public Subnet (AZ-b)
+            VpcId: !Ref myVPC
+
+    NatGateway1EIP:
+        Type: AWS::EC2::EIP
+        DependsOn: InternetGatewayAttachmentToVPC
+        Properties:
+            Domain: !Ref myVPC
+
+    NatGateway2EIP:
+        Type: AWS::EC2::EIP
+        DependsOn: InternetGatewayAttachmentToVPC
+        Properties:
+            Domain: !Ref myVPC
+
+    NatGateway1:
+        Type: AWS::EC2::NatGateway
+        Properties:
+            AllocationId: !GetAtt [ NatGateway1EIP, AllocationId ]
+            SubnetId: !Ref PubSubnet1
+
+    NatGateway2:
+        Type: AWS::EC2::NatGateway
+        Properties:
+            AllocationId: !GetAtt [ NatGateway2EIP, AllocationId ]
+            SubnetId: !Ref PubSubnet2
+
+    PublicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVPC
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Public route table
+
+    PublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: InternetGatewayAttachmentToVPC
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+            RouteTableId: !Ref PublicRouteTable
+
+    PrivateRouteTable1:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVPC
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Private route table A
+
+    PrivateRouteTable2:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVPC
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName} Private route table B
+
+    PrivateRoute1:
+        Type: AWS::EC2::Route
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            NatGatewayId: !Ref NatGateway1
+            RouteTableId: !Ref PrivateRouteTable1
+
+    PrivateRoute2:
+        Type: AWS::EC2::Route
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            NatGatewayId: !Ref NatGateway2
+            RouteTableId: !Ref PrivateRouteTable2
+
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PubSubnet1
+
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PubSubnet2
+
+    PrivateSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PrivateRouteTable1
+            SubnetId: !Ref PrivSubnet1
+
+    PrivateSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PrivateRouteTable2
+            SubnetId: !Ref PrivSubnet2
+
+    # Created the required security group for my server
+    WebServerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: Allow http to our hosts and SSH from local only
+            VpcId: !Ref myVPC
+            SecurityGroupEgress:
+              - CidrIp: 0.0.0.0/0
+                FromPort: -1
+                ToPort: -1
+                IpProtocol: -1
+            SecurityGroupIngress:
+              - CidrIp: !Ref VpcCidrBlock
+                FromPort: 22
+                ToPort: 22
+                IpProtocol: tcp
+              - CidrIp: !Ref VpcCidrBlock
+                FromPort: 80
+                ToPort: 80
+                IpProtocol: tcp
+
+    # Created the required security group for my load balancer allowing inbound and outbound traffic on the http port
+    LBServerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: Allow http to our load balancer
+            VpcId: !Ref myVPC
+            SecurityGroupEgress:
+              - CidrIp: 0.0.0.0/0
+                FromPort: 80
+                ToPort: 80
+                IpProtocol: tcp
+            SecurityGroupIngress:
+              - CidrIp: 0.0.0.0/0
+                FromPort: 80
+                ToPort: 80
+                IpProtocol: tcp
+
+    # Created the load balancer and attached it to the public subnets
+    WebAppLB:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties:
+            IpAddressType: ipv4
+            Name: website-alb
+            SecurityGroups:
+              - !Ref LBServerSecurityGroup
+            Subnets:
+              - !Ref PubSubnet1
+              - !Ref PubSubnet2
+
+    # Created the targetGroup, attached it to my VPC and provided the required health checks
+    WebAppLBTargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            HealthCheckEnabled: true
+            HealthCheckIntervalSeconds: 30
+            HealthCheckPath: /
+            HealthCheckPort: 80
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 3
+            Name: webapp-tg
+            Port: 80
+            Protocol: HTTP
+            UnhealthyThresholdCount: 2
+            VpcId: !Ref myVPC
+            
+    # Created my listener rule, attached the web listener and the targetGroup to it
+    LBListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Properties:
+            ListenerArn: !Ref WebAppLBListener
+            Actions:
+              - Type: forward
+                TargetGroupArn: !Ref WebAppLBTargetGroup
+            Conditions:
+              - Field: path-pattern
+                Values: [/]
+            Priority: 1
+
+    # Creation of the web listener
+    WebAppLBListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+            DefaultActions:
+              - TargetGroupArn: !Ref WebAppLBTargetGroup
+                Type: forward
+            LoadBalancerArn: !Ref WebAppLB
+            Port: 80
+            Protocol: HTTP
+
+    # Created the read-only role for my instance
+    ValUdacityS3ReadOnlyEC2:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                        Service:
+                          - ec2.amazonaws.com
+                    Action:
+                      - 'sts:AssumeRole'
+            ManagedPolicyArns:
+              - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+    # Created the policies for read-only role
+    # set the resource to the bucket name i want to use fetch my index.html from
+    RolePolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+            PolicyName: ValUdacityInstancePolicy
+            PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - s3:Get*
+                      - s3:List*
+                      - s3-object-lambda:Get*
+                      - s3-object-lambda:List*
+                    Resource:
+                      - arn:aws:s3:::valodagreat
+                      - arn:aws:s3:::valodagreat/*
+            Roles:
+              - !Ref ValUdacityS3ReadOnlyEC2
+
+    # Attached the Role above to my instance profile
+    ProfileWithRolesForOurApp:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            InstanceProfileName: valodagreatness
+            Roles:
+              - !Ref ValUdacityS3ReadOnlyEC2
+
+
+    # Creation of the LaunchConfiguration and attaching our instance profile to the instance
+    #Made use of the files present in my s3 bucket for the apache2 server, as can be seen in the UserData
+    WebAppLaunchConfig:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            AssociatePublicIpAddress: false
+            IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+            ImageId: ami-0cfa91bdbc3be780c
+            InstanceType: !Ref InstanceType
+            SecurityGroups:
+              - !Ref WebServerSecurityGroup
+            UserData:
+                Fn::Base64:
+                    !Sub |
+                        #!/bin/bash
+                        apt-get update -y
+                        apt-get install apache2 -y
+                        systemctl start apache2.service
+                        cd /var/www/html
+                        apt install awscli -y
+                        aws s3 sync s3://valodagreat /var/www/html
+
+
+    # Creation of the AutoScaling Group, attaching it to the AZs
+    # Set the desired capacity of servers to make sure atleast 4 servers are available as required
+    # Attached the AutoScaling group to the private subnet as required
+    AutoScaling:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            AutoScalingGroupName: webserver-auto-scaling-group
+            AvailabilityZones:
+              - !Select [ 0, !GetAZs ]
+              - !Select [ 1, !GetAZs ]
+            DesiredCapacity: "4"
+            HealthCheckGracePeriod: 120
+            HealthCheckType: EC2
+            LaunchConfigurationName: !Ref WebAppLaunchConfig
+            MaxSize: "6"
+            MinSize: "4"
+            TargetGroupARNs:
+              - !Ref WebAppLBTargetGroup
+            VPCZoneIdentifier:
+                - !Ref PrivSubnet1
+                - !Ref PrivSubnet2
+
+Outputs:
+  # Other useful outputs, that of the load balancer and it's DNS can be found below.
+    VPC:
+        Description: Reference to this project's VPC
+        Value: !Ref myVPC
+        Export:
+            Name: !Sub ${EnvironmentName}-VPCID
+
+    VPCPublicRouteTable:
+        Description: Reference to the public route table
+        Value: !Ref PublicRouteTable
+        Export:
+            Name: !Sub ${EnvironmentName}-PUB-RT
+
+    PrivateRouteTable1:
+        Description: Reference to the private route table1 AZ1
+        Value: !Ref PrivateRouteTable1
+        Export:
+            Name: !Sub ${EnvironmentName}-PRIV-R-T-1
+
+    PrivateRouteTable2:
+        Description: Reference to the private route table2 AZ2
+        Value: !Ref PrivateRouteTable2
+        Export:
+            Name: !Sub ${EnvironmentName}-PRIV-R-T-2
+
+    PublicSubnets:
+        Description: A list of my public subnets
+        Value: !Join [ ",", [ !Ref PubSubnet1, !Ref PubSubnet2 ] ]
+        Export:
+            Name: !Sub ${EnvironmentName}-PUB-NETS
+
+    PrivateSubnets:
+        Description: A list of my public subnets
+        Value: !Join [ ",", [ !Ref PrivSubnet1, !Ref PrivSubnet2 ] ]
+        Export:
+            Name: !Sub ${EnvironmentName}-PRIV-NETS
+
+    PublicSubnet1:
+        Description: A reference to the public subnet in the list available
+        Value: !Ref PubSubnet1
+        Export:
+            Name: !Sub ${EnvironmentName}-PUB1-SN
+
+    PublicSubnet2:
+        Description: A reference to the public subnet in the list available
+        Value: !Ref PubSubnet2
+        Export:
+            Name: !Sub ${EnvironmentName}-PUB2-SN
+
+    PrivateSubnet1:
+        Description: A reference to the private subnet in the list available
+        Value: !Ref PrivSubnet1
+        Export:
+            Name: !Sub ${EnvironmentName}-PRIV1-SN
+
+    PrivateSubnet2:
+        Description: A reference to the private subnet in the list available
+        Value: !Ref PrivSubnet2
+        Export:
+            Name: !Sub ${EnvironmentName}-PRIV2-SN
+
+    LBSecGroup:
+        Description: A reference to the security group of the load balancer
+        Value: !Ref LBServerSecurityGroup
+        Export:
+            Name: !Sub ${EnvironmentName}-LB-SG
+
+    WebServerSecGroup:
+        Description: A reference to the security group of the web server
+        Value: !Ref WebServerSecurityGroup
+        Export:
+            Name: !Sub ${EnvironmentName}-WS-SG
+
+    WebServerTargetGroup:
+        Description: A reference to the targetGroup of the server
+        Value: !Ref WebAppLBTargetGroup
+        Export:
+            Name: !Sub ${EnvironmentName}-WS-TG
+
+    #For the LoadBalancer and the LoadBalancer DNS
+
+    LoadBalancer:
+        Description: A reference to the load balancer of the server
+        Value: !Ref WebAppLB
+        Export:
+            Name: !Sub ${EnvironmentName}-WS-LB
+
+    LoadBalancerURL:
+        Description: A reference to the DNS of the load balancer
+        Value: !Join [ "", [ "http://", !GetAtt WebAppLB.DNSName ]]
+        Export:
+            Name: !Sub ${EnvironmentName}-WS-LB-URL
+
+    # Hard coded URL for testing
+    # http://website-alb-830201737.us-west-2.elb.amazonaws.com
